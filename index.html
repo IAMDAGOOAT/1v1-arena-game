@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Royale Arena V7 (Storage Fix)</title>
+    <title>Build Royale Arena V9 (Ramp Fix & Controls Check)</title>
+    <!-- Tailwind CSS (Addressing console warning: using development CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
@@ -134,8 +136,8 @@
     <!-- Firebase Imports (Required for Canvas Environment) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // *** FIX: Import setPersistence and browserSessionPersistence ***
-        import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // NOTE: We change the persistence import to use 'inMemoryPersistence' to completely avoid storage issues.
+        import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -151,8 +153,9 @@
                 auth = getAuth(app);
 
                 async function authenticate() {
-                    // Set persistence to session (not local) to avoid cross-site tracking issues
-                    await setPersistence(auth, browserSessionPersistence);
+                    // Set persistence to in-memory mode to completely bypass browser storage mechanisms
+                    // This resolves "Tracking Prevention blocked access" errors in embedded environments.
+                    await setPersistence(auth, inMemoryPersistence);
                     
                     if (initialAuthToken) {
                         await signInWithCustomToken(auth, initialAuthToken);
@@ -175,7 +178,7 @@
 
         <!-- Game Over/Start Overlay -->
         <div id="game-overlay" class="game-overlay">
-            <h1 class="overlay-title">BUILD ARENA V7</h1>
+            <h1 class="overlay-title">BUILD ARENA V9</h1>
             <p class="overlay-content">
                 **Click the screen to lock your mouse and play!**<br>
                 Enemies are now **character models** that jump and chase you.<br><br>
@@ -323,7 +326,14 @@
             const startButton = document.getElementById('startButton');
             const statusDisplay = document.getElementById('status-display');
 
-            startButton.addEventListener('click', () => { controls.lock(); });
+            startButton.addEventListener('click', () => { 
+                // CRITICAL: Ensure controls is defined before calling lock()
+                if (controls) {
+                    controls.lock(); 
+                } else {
+                    console.error("Controls not initialized!");
+                }
+            });
 
             controls.addEventListener('lock', () => {
                 player.isLocked = true;
@@ -526,6 +536,7 @@
                 finalX = gridX;
                 finalZ = gridZ;
                 finalY = intersect.object.position.y + GRID_SIZE; 
+                // Determine the correct Y position relative to the grid
                 if (intersect.object.name === 'Floor' || intersect.object.name === 'Terrain' || intersect.object.name === 'Buildable') {
                    finalY = Math.floor(hitPoint.y / GRID_SIZE) * GRID_SIZE + GRID_SIZE + 0.01;
                 }
@@ -534,18 +545,29 @@
                 mesh.rotation.x = -Math.PI / 2;
                 
             } else if (type === 'Ramp') {
+                // Ramps should usually be placed one level above the hit point for building "up"
                 finalY = Math.floor(hitPoint.y / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2; 
                 finalX = gridX;
                 finalZ = gridZ;
                 
                 const rampGeo = new THREE.BoxGeometry(GRID_SIZE, GRID_SIZE * 1.5, GRID_SIZE);
                 mesh = new THREE.Mesh(rampGeo, rampMaterial);
+                // Ramp orientation (slanted)
                 mesh.rotation.x = -Math.PI / 6; 
                 
+                // Determine rotation based on camera direction
                 const lookDirection = new THREE.Vector3();
                 camera.getWorldDirection(lookDirection);
                 let rotationY = Math.round(Math.atan2(lookDirection.x, lookDirection.z) / (Math.PI / 2)) * (Math.PI / 2);
                 mesh.rotation.y = rotationY;
+
+                // Move the ramp slightly up and back to align with the grid block it is intended to lead up to
+                // This compensates for the rotation offset
+                const offset = new THREE.Vector3(0, 0, -GRID_SIZE/4); // Apply a slight offset along its local Z-axis
+                offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationY);
+                finalX += offset.x;
+                finalZ += offset.z;
+                finalY += GRID_SIZE / 4; // Raise it slightly so the base touches the floor correctly
             }
 
             const alreadyExists = buildables.some(item => 
@@ -599,6 +621,7 @@
         
         function updateHealthBarRotation() {
             targets.forEach(target => {
+                // Ensure target.parent exists before accessing it
                 if (target.healthBar && target.parent) {
                     target.healthBar.parent.lookAt(camera.position); 
                 }
@@ -608,16 +631,20 @@
         function updateProjectiles(delta) {
             const destructible = [...targets, ...enemies]; 
             
-            projectiles.forEach((p, pIndex) => {
+            // Iterate backwards to safely remove elements
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
                 const prevPos = p.position.clone();
                 p.position.add(p.velocity.clone().multiplyScalar(delta));
 
                 const ray = new THREE.Raycaster(prevPos, p.position.clone().sub(prevPos).normalize());
+                // The third argument (true) enables recursive checking, which is necessary because the Enemy is a Group.
                 const intersects = ray.intersectObjects(destructible, true); 
                 const intersectBuildables = ray.intersectObjects(buildables, false); 
 
                 let hitObject = null;
                 if (intersects.length > 0) {
+                    // Check if the hit object is a child of an 'Enemy' group. If so, target the group (parent).
                     hitObject = intersects[0].object.parent.name === 'Enemy' ? intersects[0].object.parent : intersects[0].object; 
                 } else if (intersectBuildables.length > 0 && intersectBuildables[0].object.name === 'Buildable') {
                     hitObject = intersectBuildables[0].object;
@@ -625,13 +652,14 @@
 
                 if (hitObject) {
                     scene.remove(p);
-                    projectiles.splice(pIndex, 1);
-
+                    projectiles.splice(i, 1); // Remove projectile
+                    
                     if (hitObject.name === 'Target') {
                         hitObject.currentHealth -= 25;
                         
                         const healthRatio = hitObject.currentHealth / hitObject.maxHealth;
                         hitObject.healthBar.scale.x = healthRatio;
+                        // Reposition bar for visual effect
                         hitObject.healthBar.position.x = (healthRatio - 1) * hitObject.healthBar.geometry.parameters.width / 2;
                         hitObject.healthBar.material.color.setHex(healthRatio > 0.5 ? 0x00ff00 : (healthRatio > 0.2 ? 0xffaa00 : 0xff0000));
                         
@@ -653,15 +681,15 @@
                         scene.remove(hitObject);
                         buildables = buildables.filter(b => b !== hitObject);
                     }
-                    return; 
+                    continue; // Skip the rest of the loop for this projectile
                 }
 
                 // Remove projectile if out of bounds
                 if (Math.abs(p.position.x) > mapSize * 2 || Math.abs(p.position.z) > mapSize * 2 || p.position.y < -10) {
                     scene.remove(p);
-                    projectiles.splice(pIndex, 1);
+                    projectiles.splice(i, 1); // Remove projectile
                 }
-            });
+            }
         }
 
         function updateEnemies(delta) {
@@ -714,10 +742,13 @@
 
             if (player.isLocked) {
                 const delta = clock.getDelta();
-                updatePhysics(delta);
-                updateProjectiles(delta);
-                updateEnemies(delta);
-                updateHealthBarRotation(); 
+                // Ensure controls is defined before moving it
+                if (controls) {
+                    updatePhysics(delta);
+                    updateProjectiles(delta);
+                    updateEnemies(delta);
+                    updateHealthBarRotation(); 
+                }
             }
             renderer.render(scene, camera);
         }
