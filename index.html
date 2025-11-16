@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Royale Arena V6 (CDN Fix)</title>
+    <title>Build Royale Arena V7 (Storage Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
-    <!-- *** FIX HERE: Using an alternative, stable CDN for PointerLockControls *** -->
+    <!-- Using an alternative, stable CDN for PointerLockControls -->
     <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/PointerLockControls.js"></script>
     
     <style>
@@ -134,7 +134,8 @@
     <!-- Firebase Imports (Required for Canvas Environment) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // *** FIX: Import setPersistence and browserSessionPersistence ***
+        import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -150,6 +151,9 @@
                 auth = getAuth(app);
 
                 async function authenticate() {
+                    // Set persistence to session (not local) to avoid cross-site tracking issues
+                    await setPersistence(auth, browserSessionPersistence);
+                    
                     if (initialAuthToken) {
                         await signInWithCustomToken(auth, initialAuthToken);
                     } else {
@@ -171,7 +175,7 @@
 
         <!-- Game Over/Start Overlay -->
         <div id="game-overlay" class="game-overlay">
-            <h1 class="overlay-title">BUILD ARENA V6</h1>
+            <h1 class="overlay-title">BUILD ARENA V7</h1>
             <p class="overlay-content">
                 **Click the screen to lock your mouse and play!**<br>
                 Enemies are now **character models** that jump and chase you.<br><br>
