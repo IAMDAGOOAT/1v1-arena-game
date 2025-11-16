@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Royale Arena V4 (Character Enemy)</title>
+    <title>Build Royale Arena V6 (CDN Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- PointerLockControls for First-Person Shooter experience -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    
+    <!-- *** FIX HERE: Using an alternative, stable CDN for PointerLockControls *** -->
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/PointerLockControls.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Bungee+Inline&family=Press+Start+2P&display=swap');
@@ -170,7 +171,7 @@
 
         <!-- Game Over/Start Overlay -->
         <div id="game-overlay" class="game-overlay">
-            <h1 class="overlay-title">BUILD ARENA V4</h1>
+            <h1 class="overlay-title">BUILD ARENA V6</h1>
             <p class="overlay-content">
                 **Click the screen to lock your mouse and play!**<br>
                 Enemies are now **character models** that jump and chase you.<br><br>
@@ -201,7 +202,7 @@
         const BUILD_COST = 10;
         const PLAYER_HEIGHT = 2; 
         const ENEMY_JUMP_VELOCITY = 10;
-        const ENEMY_HEIGHT = 4; // Total height of the assembled character model
+        const ENEMY_HEIGHT = 4; 
 
         let player = {
             resources: 100,
@@ -228,18 +229,13 @@
         const wallMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513, shininess: 5 });
         const rampMaterial = new THREE.MeshPhongMaterial({ color: 0xcc9966, shininess: 5 });
         const targetMaterial = new THREE.MeshLambertMaterial({ color: 0xcc0000 });
-        const enemyMaterial = new THREE.MeshLambertMaterial({ color: 0xff00ff }); // Magenta for enemies
         const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
         const targetGeo = new THREE.BoxGeometry(GRID_SIZE, GRID_SIZE, GRID_SIZE);
 
         // --- Character Mesh Generator ---
-
-        /**
-         * Creates a segmented character mesh (head, body, legs) as a THREE.Group.
-         */
         function createEnemyMesh() {
             const group = new THREE.Group();
-            const material = new THREE.MeshLambertMaterial({ color: 0xff00ff }); // Bright Magenta
+            const material = new THREE.MeshLambertMaterial({ color: 0xff00ff }); 
 
             // Head (H=1)
             const headGeo = new THREE.BoxGeometry(1.5, 1, 1.5);
@@ -256,7 +252,6 @@
             const legsMesh = new THREE.Mesh(legsGeo, material);
             legsMesh.position.y = 0.5;
             
-            // Add components to the group
             group.add(legsMesh);
             group.add(bodyMesh);
             group.add(headMesh);
@@ -308,6 +303,9 @@
 
             onWindowResize(); 
             window.addEventListener('resize', onWindowResize, false);
+            
+            // Start the animation loop after initialization
+            animate(); 
         }
 
         function onWindowResize() {
@@ -419,7 +417,6 @@
             healthGroup.add(backgroundBar);
             healthGroup.add(foregroundBar);
             
-            // Make the health bar look at the camera
             healthGroup.lookAt(camera.position);
 
             healthGroup.position.set(0, GRID_SIZE + 0.5, 0); 
@@ -451,10 +448,10 @@
         
         function spawnEnemies(count) {
              for (let i = 0; i < count; i++) {
-                const enemy = createEnemyMesh(); // Use the new character mesh function
+                const enemy = createEnemyMesh(); 
                 enemy.position.set(
                     (Math.random() - 0.5) * mapSize * 0.8,
-                    ENEMY_HEIGHT / 2, // Center of 4 unit tall character is 2
+                    ENEMY_HEIGHT / 2, 
                     (Math.random() - 0.5) * mapSize * 0.8
                 );
                 if (enemy.position.distanceTo(new THREE.Vector3(0, 0, 0)) < 30) {
@@ -498,7 +495,6 @@
             const intersect = intersects[0];
             const hitPoint = intersect.point;
             
-            // Determine grid cell center
             let gridX = Math.round(hitPoint.x / GRID_SIZE) * GRID_SIZE;
             let gridY = Math.round(hitPoint.y / GRID_SIZE) * GRID_SIZE;
             let gridZ = Math.round(hitPoint.z / GRID_SIZE) * GRID_SIZE;
@@ -509,11 +505,9 @@
             if (type === 'Wall') {
                 const wallThickness = 0.2;
                 
-                // Determine direction based on where the ray hit the intersecting object
                 let normal = intersect.face.normal.clone();
                 normal.transformDirection(intersect.object.matrixWorld);
                 
-                // Snap to face normal direction
                 if (Math.abs(normal.x) > Math.abs(normal.z)) {
                     finalX += Math.sign(normal.x) * GRID_SIZE / 2;
                     finalY = Math.round((hitPoint.y + GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
@@ -525,12 +519,10 @@
                 }
 
             } else if (type === 'Floor') {
-                // Place floor directly on top of the hit surface
                 finalX = gridX;
                 finalZ = gridZ;
                 finalY = intersect.object.position.y + GRID_SIZE; 
                 if (intersect.object.name === 'Floor' || intersect.object.name === 'Terrain' || intersect.object.name === 'Buildable') {
-                   // Calculate the new Y position by snapping up from the intersection point
                    finalY = Math.floor(hitPoint.y / GRID_SIZE) * GRID_SIZE + GRID_SIZE + 0.01;
                 }
                 
@@ -546,15 +538,12 @@
                 mesh = new THREE.Mesh(rampGeo, rampMaterial);
                 mesh.rotation.x = -Math.PI / 6; 
                 
-                // Determine rotation based on camera direction
                 const lookDirection = new THREE.Vector3();
                 camera.getWorldDirection(lookDirection);
-                // Snap to 90 degree increments for ramp
                 let rotationY = Math.round(Math.atan2(lookDirection.x, lookDirection.z) / (Math.PI / 2)) * (Math.PI / 2);
                 mesh.rotation.y = rotationY;
             }
 
-            // Check if position is occupied by another buildable
             const alreadyExists = buildables.some(item => 
                 item.position.distanceTo(new THREE.Vector3(finalX, finalY, finalZ)) < 0.1
             );
@@ -607,15 +596,12 @@
         function updateHealthBarRotation() {
             targets.forEach(target => {
                 if (target.healthBar && target.parent) {
-                    // Make the health bar group look at the camera
-                    // The health bar is attached to the target, so we use the camera's world position
                     target.healthBar.parent.lookAt(camera.position); 
                 }
             });
         }
 
         function updateProjectiles(delta) {
-            // Include enemies in hit targets
             const destructible = [...targets, ...enemies]; 
             
             projectiles.forEach((p, pIndex) => {
@@ -628,10 +614,8 @@
 
                 let hitObject = null;
                 if (intersects.length > 0) {
-                    // Prioritize destructible targets
                     hitObject = intersects[0].object.parent.name === 'Enemy' ? intersects[0].object.parent : intersects[0].object; 
                 } else if (intersectBuildables.length > 0 && intersectBuildables[0].object.name === 'Buildable') {
-                    // Hit a player-built structure
                     hitObject = intersectBuildables[0].object;
                 }
 
@@ -640,7 +624,6 @@
                     projectiles.splice(pIndex, 1);
 
                     if (hitObject.name === 'Target') {
-                        // Logic for static target
                         hitObject.currentHealth -= 25;
                         
                         const healthRatio = hitObject.currentHealth / hitObject.maxHealth;
@@ -653,22 +636,16 @@
                             targets = targets.filter(t => t !== hitObject);
                             score++;
                             updateUI();
-                            // Optional: Spawn a new target
-                            // spawnTargets(1);
                         }
                     } else if (hitObject.name === 'Enemy') {
-                        // Logic for character enemy (hitObject is the THREE.Group)
                         hitObject.health -= 50;
                         if (hitObject.health <= 0) {
                             scene.remove(hitObject);
                             enemies = enemies.filter(e => e !== hitObject);
                             score++;
                             updateUI();
-                             // Optional: Spawn a new enemy
-                            // spawnEnemies(1);
                         }
                     } else if (hitObject.name === 'Buildable') {
-                        // Projectiles can destroy player builds
                         scene.remove(hitObject);
                         buildables = buildables.filter(b => b !== hitObject);
                     }
@@ -693,7 +670,7 @@
                 enemy.position.y += enemy.velocity.y * delta;
 
                 // 2. Simple Ground Check / Collision
-                const floorLevel = ENEMY_HEIGHT / 2; // Center of 4 unit tall character is 2
+                const floorLevel = ENEMY_HEIGHT / 2; 
                 if (enemy.position.y < floorLevel) {
                     enemy.velocity.y = 0;
                     enemy.position.y = floorLevel;
@@ -706,11 +683,9 @@
                 
                 const direction = targetPos.sub(enemy.position).normalize();
                 
-                // Rotate enemy to face direction of movement
                 const angle = Math.atan2(direction.x, direction.z);
                 enemy.rotation.y = angle;
 
-                // Move forward if on the ground
                 if (enemy.canJump) {
                     enemy.position.x += direction.x * enemySpeed * delta;
                     enemy.position.z += direction.z * enemySpeed * delta;
@@ -738,14 +713,13 @@
                 updatePhysics(delta);
                 updateProjectiles(delta);
                 updateEnemies(delta);
-                updateHealthBarRotation(); // Keep health bars facing the camera
+                updateHealthBarRotation(); 
             }
             renderer.render(scene, camera);
         }
 
         window.onload = function () {
-            init3D();
-            animate();
+            init3D(); 
         };
     </script>
 </body>
