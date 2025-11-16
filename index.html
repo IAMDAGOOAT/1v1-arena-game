@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Royale Arena V4 (Character Enemy)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- PointerLockControls for First-Person Shooter experience -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bungee+Inline&family=Press+Start+2P&display=swap');
+        
+        body {
+            background-color: #121212;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            font-family: 'Press Start 2P', monospace;
+            overflow: hidden;
+        }
+
+        #game-container {
+            width: 100%;
+            max-width: 900px;
+            height: 600px; 
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+        }
+
+        #game-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui-panel {
+            background-color: #333;
+            border-bottom-left-radius: 10px;
+            border-bottom-right-radius: 10px;
+            padding: 10px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            font-size: 8px; 
+            color: #ffcc00;
+            border-top: 2px solid #555;
+            text-shadow: 1px 1px 2px #000;
+        }
+
+        .stat {
+            padding: 5px 10px;
+            border-radius: 6px;
+            background-color: rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+        }
+
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .overlay-title {
+            font-family: 'Bungee Inline', cursive;
+            font-size: 2.5rem;
+            color: #00ffff;
+            text-shadow: 0 0 10px #00ffff, 0 0 20px rgba(0, 255, 255, 0.7);
+            margin-bottom: 20px;
+        }
+
+        .overlay-content {
+            font-size: 0.8rem;
+            color: #eee;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .action-button {
+            padding: 15px 30px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 14px;
+            background-color: #ff3366;
+            color: #fff;
+            border: 3px solid #ff0044;
+            border-radius: 8px;
+            box-shadow: 0 5px #aa002d;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 2px;
+            height: 2px;
+            margin-top: -1px;
+            margin-left: -1px;
+            background-color: white;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @media (max-width: 600px) {
+            .overlay-title { font-size: 1.8rem; }
+            .overlay-content { font-size: 0.7rem; }
+            #ui-panel .stat:nth-child(4) { display: none; }
+        }
+    </style>
+    <!-- Firebase Imports (Required for Canvas Environment) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth;
+
+        if (firebaseConfig) {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                async function authenticate() {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    console.log('Firebase initialized and user authenticated.');
+                }
+                authenticate();
+            } catch (e) {
+                console.error("Firebase initialization failed:", e);
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="game-container">
+        <div id="crosshair"></div>
+        <div id="threejs-output"></div>
+
+        <!-- Game Over/Start Overlay -->
+        <div id="game-overlay" class="game-overlay">
+            <h1 class="overlay-title">BUILD ARENA V4</h1>
+            <p class="overlay-content">
+                **Click the screen to lock your mouse and play!**<br>
+                Enemies are now **character models** that jump and chase you.<br><br>
+                **MOVEMENT:** WASD | **JUMP:** Spacebar<br>
+                **BUILDING HOTKEYS:**<br>
+                **Q:** Wall | **E:** Floor | **R:** Ramp (Stairs)<br>
+                **G:** Gather Wood (+50 Wood)
+            </p>
+            <button id="startButton" class="action-button">START TRAINING</button>
+        </div>
+    </div>
+    
+    <!-- UI Panel -->
+    <div id="ui-panel">
+        <div class="stat" id="status-display">🔒 Click screen to lock cursor</div>
+        <div class="stat" id="score-display">🎯 Kills: 0</div>
+        <div class="stat" id="resource-display">🌳 Wood: 100</div>
+        <div class="stat">Build: **Q** (Wall) | **E** (Floor) | **R** (Ramp) | **G** (Gather)</div>
+    </div>
+
+    <script>
+        // --- 3D Scene Variables ---
+        let scene, camera, renderer, controls;
+        let clock;
+        let score = 0;
+        const mapSize = 100;
+        const GRID_SIZE = 5; 
+        const BUILD_COST = 10;
+        const PLAYER_HEIGHT = 2; 
+        const ENEMY_JUMP_VELOCITY = 10;
+        const ENEMY_HEIGHT = 4; // Total height of the assembled character model
+
+        let player = {
+            resources: 100,
+            canJump: true,
+            isLocked: false,
+            velocity: new THREE.Vector3(),
+            direction: new THREE.Vector3(),
+            moveForward: false,
+            moveBackward: false,
+            moveLeft: false,
+            moveRight: false,
+            speed: 100.0
+        };
+
+        // Entities
+        let buildables = []; 
+        let targets = []; 
+        let enemies = [];
+        let projectiles = [];
+        let raycaster; 
+        
+        // --- Geometries & Materials ---
+        const floorMaterial = new THREE.MeshPhongMaterial({ color: 0x4aa02c, side: THREE.DoubleSide });
+        const wallMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513, shininess: 5 });
+        const rampMaterial = new THREE.MeshPhongMaterial({ color: 0xcc9966, shininess: 5 });
+        const targetMaterial = new THREE.MeshLambertMaterial({ color: 0xcc0000 });
+        const enemyMaterial = new THREE.MeshLambertMaterial({ color: 0xff00ff }); // Magenta for enemies
+        const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+        const targetGeo = new THREE.BoxGeometry(GRID_SIZE, GRID_SIZE, GRID_SIZE);
+
+        // --- Character Mesh Generator ---
+
+        /**
+         * Creates a segmented character mesh (head, body, legs) as a THREE.Group.
+         */
+        function createEnemyMesh() {
+            const group = new THREE.Group();
+            const material = new THREE.MeshLambertMaterial({ color: 0xff00ff }); // Bright Magenta
+
+            // Head (H=1)
+            const headGeo = new THREE.BoxGeometry(1.5, 1, 1.5);
+            const headMesh = new THREE.Mesh(headGeo, material);
+            headMesh.position.y = 3.5; 
+
+            // Body (H=2)
+            const bodyGeo = new THREE.BoxGeometry(2, 2, 1.5);
+            const bodyMesh = new THREE.Mesh(bodyGeo, material);
+            bodyMesh.position.y = 2; 
+
+            // Legs (H=1)
+            const legsGeo = new THREE.BoxGeometry(2, 1, 1.5);
+            const legsMesh = new THREE.Mesh(legsGeo, material);
+            legsMesh.position.y = 0.5;
+            
+            // Add components to the group
+            group.add(legsMesh);
+            group.add(bodyMesh);
+            group.add(headMesh);
+            
+            return group;
+        }
+
+        // --- Core Functions ---
+
+        function init3D() {
+            const container = document.getElementById('threejs-output');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x7c94a8);
+            scene.fog = new THREE.Fog(0x7c94a8, 0, mapSize * 2);
+            clock = new THREE.Clock();
+
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, PLAYER_HEIGHT, 0); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            scene.add(new THREE.AmbientLight(0x404040, 5));
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            directionalLight.position.set(20, 50, 20);
+            scene.add(directionalLight);
+            
+            // Floor
+            const floorGeometry = new THREE.PlaneGeometry(mapSize, mapSize);
+            const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.position.y = -0.01; 
+            floorMesh.name = 'Floor'; 
+            scene.add(floorMesh);
+            buildables.push(floorMesh); 
+
+            // Controls and Raycaster
+            controls = new THREE.PointerLockControls(camera, renderer.domElement);
+            scene.add(controls.getObject());
+            raycaster = new THREE.Raycaster();
+            
+            setupControls(container);
+            createStaticTerrain();
+            spawnTargets(3);
+            spawnEnemies(2);
+
+            onWindowResize(); 
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('threejs-output');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function setupControls(container) {
+            const startButton = document.getElementById('startButton');
+            const statusDisplay = document.getElementById('status-display');
+
+            startButton.addEventListener('click', () => { controls.lock(); });
+
+            controls.addEventListener('lock', () => {
+                player.isLocked = true;
+                statusDisplay.textContent = '🔓 Cursor Locked - WASD / QE R';
+                document.getElementById('game-overlay').style.display = 'none';
+                container.style.cursor = 'none';
+            });
+
+            controls.addEventListener('unlock', () => {
+                player.isLocked = false;
+                statusDisplay.textContent = '🔒 Click screen to lock cursor';
+                document.getElementById('game-overlay').style.display = 'flex';
+                container.style.cursor = 'pointer';
+            });
+            
+            document.addEventListener('keydown', onKeyDown, false);
+            document.addEventListener('keyup', onKeyUp, false);
+            document.addEventListener('mousedown', onMouseDown, false);
+        }
+
+        function onKeyDown(event) {
+            if (!player.isLocked) return;
+
+            switch (event.code) {
+                case 'KeyW': player.moveForward = true; break;
+                case 'KeyA': player.moveLeft = true; break;
+                case 'KeyS': player.moveBackward = true; break;
+                case 'KeyD': player.moveRight = true; break;
+                case 'Space': 
+                    if (player.canJump) player.velocity.y += 15;
+                    player.canJump = false;
+                    break;
+                case 'KeyQ': attemptBuild('Wall'); break;
+                case 'KeyE': attemptBuild('Floor'); break;
+                case 'KeyR': attemptBuild('Ramp'); break;
+                case 'KeyG': 
+                    player.resources += 50;
+                    updateUI();
+                    break;
+            }
+        }
+
+        function onKeyUp(event) {
+            if (!player.isLocked) return;
+            switch (event.code) {
+                case 'KeyW': player.moveForward = false; break;
+                case 'KeyA': player.moveLeft = false; break;
+                case 'KeyS': player.moveBackward = false; break;
+                case 'KeyD': player.moveRight = false; break;
+            }
+        }
+
+        function onMouseDown(event) {
+            if (!player.isLocked || event.button !== 0) return;
+            shoot();
+        }
+        // --- Terrain & Enemy Setup ---
+
+        function createStaticTerrain() {
+            const hillMaterial = new THREE.MeshPhongMaterial({ color: 0x6e6e6e });
+            
+            // Hill 1
+            const hill1 = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 20), hillMaterial);
+            hill1.position.set(30, 5, 30);
+            hill1.name = 'Terrain';
+            scene.add(hill1);
+            buildables.push(hill1);
+
+            // Hill 2 (Smaller, ramp-like)
+            const hill2 = new THREE.Mesh(new THREE.BoxGeometry(10, 5, 15), hillMaterial);
+            hill2.position.set(-25, 2.5, 10);
+            hill2.rotation.z = Math.PI / 10;
+            hill2.name = 'Terrain';
+            scene.add(hill2);
+            buildables.push(hill2);
+        }
+
+        function spawnHealthBar(targetMesh) {
+            const barWidth = GRID_SIZE;
+            const barHeight = 0.5;
+            
+            // Health Bar Background (Black)
+            const backgroundGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+            const backgroundMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+            const backgroundBar = new THREE.Mesh(backgroundGeo, backgroundMat);
+            backgroundBar.name = 'HealthGroup'; 
+
+            // Health Bar Foreground (Green)
+            const foregroundGeo = new THREE.PlaneGeometry(barWidth - 0.1, barHeight - 0.1);
+            const foregroundMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide });
+            const foregroundBar = new THREE.Mesh(foregroundGeo, foregroundMat);
+
+            // Group them
+            const healthGroup = new THREE.Group();
+            healthGroup.add(backgroundBar);
+            healthGroup.add(foregroundBar);
+            
+            // Make the health bar look at the camera
+            healthGroup.lookAt(camera.position);
+
+            healthGroup.position.set(0, GRID_SIZE + 0.5, 0); 
+            targetMesh.add(healthGroup);
+
+            // Store bar reference
+            targetMesh.healthBar = foregroundBar;
+            targetMesh.maxHealth = 100;
+            targetMesh.currentHealth = 100;
+        }
+
+        function spawnTargets(count) {
+            for (let i = 0; i < count; i++) {
+                const target = new THREE.Mesh(targetGeo, targetMaterial.clone());
+                target.position.set(
+                    (Math.random() - 0.5) * mapSize * 0.8,
+                    GRID_SIZE / 2,
+                    (Math.random() - 0.5) * mapSize * 0.8
+                );
+                if (target.position.distanceTo(new THREE.Vector3(0, 0, 0)) < 20) {
+                    i--; continue;
+                }
+                target.name = 'Target';
+                spawnHealthBar(target);
+                scene.add(target);
+                targets.push(target);
+            }
+        }
+        
+        function spawnEnemies(count) {
+             for (let i = 0; i < count; i++) {
+                const enemy = createEnemyMesh(); // Use the new character mesh function
+                enemy.position.set(
+                    (Math.random() - 0.5) * mapSize * 0.8,
+                    ENEMY_HEIGHT / 2, // Center of 4 unit tall character is 2
+                    (Math.random() - 0.5) * mapSize * 0.8
+                );
+                if (enemy.position.distanceTo(new THREE.Vector3(0, 0, 0)) < 30) {
+                    i--; continue;
+                }
+                enemy.name = 'Enemy';
+                enemy.health = 100;
+                enemy.velocity = new THREE.Vector3(0, 0, 0);
+                enemy.canJump = true;
+                enemy.lastJumpTime = clock.elapsedTime;
+                scene.add(enemy);
+                enemies.push(enemy);
+            }
+        }
+
+        // --- Gameplay Mechanics ---
+
+        function shoot() {
+            const projectileSize = 0.5;
+            const projectile = new THREE.Mesh(new THREE.SphereGeometry(projectileSize, 8, 8), projectileMaterial);
+            projectile.position.copy(camera.position);
+
+            const lookDirection = new THREE.Vector3();
+            camera.getWorldDirection(lookDirection);
+
+            projectile.velocity = lookDirection.multiplyScalar(200); 
+            projectile.name = 'Projectile';
+            
+            scene.add(projectile);
+            projectiles.push(projectile);
+        }
+
+        function attemptBuild(type) {
+            if (!player.isLocked || player.resources < BUILD_COST) return;
+
+            raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+            const intersects = raycaster.intersectObjects(buildables, false);
+
+            if (intersects.length === 0) return;
+
+            const intersect = intersects[0];
+            const hitPoint = intersect.point;
+            
+            // Determine grid cell center
+            let gridX = Math.round(hitPoint.x / GRID_SIZE) * GRID_SIZE;
+            let gridY = Math.round(hitPoint.y / GRID_SIZE) * GRID_SIZE;
+            let gridZ = Math.round(hitPoint.z / GRID_SIZE) * GRID_SIZE;
+
+            let finalX = gridX, finalY = gridY, finalZ = gridZ;
+            let mesh;
+
+            if (type === 'Wall') {
+                const wallThickness = 0.2;
+                
+                // Determine direction based on where the ray hit the intersecting object
+                let normal = intersect.face.normal.clone();
+                normal.transformDirection(intersect.object.matrixWorld);
+                
+                // Snap to face normal direction
+                if (Math.abs(normal.x) > Math.abs(normal.z)) {
+                    finalX += Math.sign(normal.x) * GRID_SIZE / 2;
+                    finalY = Math.round((hitPoint.y + GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
+                    mesh = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, GRID_SIZE, GRID_SIZE), wallMaterial);
+                } else {
+                    finalZ += Math.sign(normal.z) * GRID_SIZE / 2;
+                    finalY = Math.round((hitPoint.y + GRID_SIZE / 2) / GRID_SIZE) * GRID_SIZE;
+                    mesh = new THREE.Mesh(new THREE.BoxGeometry(GRID_SIZE, GRID_SIZE, wallThickness), wallMaterial);
+                }
+
+            } else if (type === 'Floor') {
+                // Place floor directly on top of the hit surface
+                finalX = gridX;
+                finalZ = gridZ;
+                finalY = intersect.object.position.y + GRID_SIZE; 
+                if (intersect.object.name === 'Floor' || intersect.object.name === 'Terrain' || intersect.object.name === 'Buildable') {
+                   // Calculate the new Y position by snapping up from the intersection point
+                   finalY = Math.floor(hitPoint.y / GRID_SIZE) * GRID_SIZE + GRID_SIZE + 0.01;
+                }
+                
+                mesh = new THREE.Mesh(new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE), wallMaterial);
+                mesh.rotation.x = -Math.PI / 2;
+                
+            } else if (type === 'Ramp') {
+                finalY = Math.floor(hitPoint.y / GRID_SIZE) * GRID_SIZE + GRID_SIZE / 2; 
+                finalX = gridX;
+                finalZ = gridZ;
+                
+                const rampGeo = new THREE.BoxGeometry(GRID_SIZE, GRID_SIZE * 1.5, GRID_SIZE);
+                mesh = new THREE.Mesh(rampGeo, rampMaterial);
+                mesh.rotation.x = -Math.PI / 6; 
+                
+                // Determine rotation based on camera direction
+                const lookDirection = new THREE.Vector3();
+                camera.getWorldDirection(lookDirection);
+                // Snap to 90 degree increments for ramp
+                let rotationY = Math.round(Math.atan2(lookDirection.x, lookDirection.z) / (Math.PI / 2)) * (Math.PI / 2);
+                mesh.rotation.y = rotationY;
+            }
+
+            // Check if position is occupied by another buildable
+            const alreadyExists = buildables.some(item => 
+                item.position.distanceTo(new THREE.Vector3(finalX, finalY, finalZ)) < 0.1
+            );
+            if (alreadyExists) return;
+
+            if (mesh) {
+                mesh.position.set(finalX, finalY, finalZ);
+                mesh.name = 'Buildable';
+                scene.add(mesh);
+                buildables.push(mesh);
+                player.resources -= BUILD_COST;
+                updateUI();
+            }
+        }
+
+
+        // --- Game Loop & Physics ---
+
+        function updatePhysics(delta) {
+            // Player Movement
+            player.velocity.x -= player.velocity.x * 10.0 * delta;
+            player.velocity.z -= player.velocity.z * 10.0 * delta;
+            player.velocity.y -= 9.8 * 10.0 * delta; 
+
+            player.direction.z = Number(player.moveForward) - Number(player.moveBackward);
+            player.direction.x = Number(player.moveRight) - Number(player.moveLeft);
+            player.direction.normalize(); 
+
+            if (player.moveForward || player.moveBackward) {
+                player.velocity.z -= player.direction.z * player.speed * delta;
+            }
+            if (player.moveLeft || player.moveRight) {
+                player.velocity.x -= player.direction.x * player.speed * delta;
+            }
+
+            controls.moveRight(-player.velocity.x * delta);
+            controls.moveForward(-player.velocity.z * delta);
+            
+            // Simple Ground Clamp 
+            controls.getObject().position.y += player.velocity.y * delta;
+            
+            const floorLevel = PLAYER_HEIGHT;
+            if (controls.getObject().position.y < floorLevel) {
+                player.velocity.y = 0;
+                controls.getObject().position.y = floorLevel;
+                player.canJump = true;
+            }
+        }
+        
+        function updateHealthBarRotation() {
+            targets.forEach(target => {
+                if (target.healthBar && target.parent) {
+                    // Make the health bar group look at the camera
+                    // The health bar is attached to the target, so we use the camera's world position
+                    target.healthBar.parent.lookAt(camera.position); 
+                }
+            });
+        }
+
+        function updateProjectiles(delta) {
+            // Include enemies in hit targets
+            const destructible = [...targets, ...enemies]; 
+            
+            projectiles.forEach((p, pIndex) => {
+                const prevPos = p.position.clone();
+                p.position.add(p.velocity.clone().multiplyScalar(delta));
+
+                const ray = new THREE.Raycaster(prevPos, p.position.clone().sub(prevPos).normalize());
+                const intersects = ray.intersectObjects(destructible, true); 
+                const intersectBuildables = ray.intersectObjects(buildables, false); 
+
+                let hitObject = null;
+                if (intersects.length > 0) {
+                    // Prioritize destructible targets
+                    hitObject = intersects[0].object.parent.name === 'Enemy' ? intersects[0].object.parent : intersects[0].object; 
+                } else if (intersectBuildables.length > 0 && intersectBuildables[0].object.name === 'Buildable') {
+                    // Hit a player-built structure
+                    hitObject = intersectBuildables[0].object;
+                }
+
+                if (hitObject) {
+                    scene.remove(p);
+                    projectiles.splice(pIndex, 1);
+
+                    if (hitObject.name === 'Target') {
+                        // Logic for static target
+                        hitObject.currentHealth -= 25;
+                        
+                        const healthRatio = hitObject.currentHealth / hitObject.maxHealth;
+                        hitObject.healthBar.scale.x = healthRatio;
+                        hitObject.healthBar.position.x = (healthRatio - 1) * hitObject.healthBar.geometry.parameters.width / 2;
+                        hitObject.healthBar.material.color.setHex(healthRatio > 0.5 ? 0x00ff00 : (healthRatio > 0.2 ? 0xffaa00 : 0xff0000));
+                        
+                        if (hitObject.currentHealth <= 0) {
+                            scene.remove(hitObject);
+                            targets = targets.filter(t => t !== hitObject);
+                            score++;
+                            updateUI();
+                            // Optional: Spawn a new target
+                            // spawnTargets(1);
+                        }
+                    } else if (hitObject.name === 'Enemy') {
+                        // Logic for character enemy (hitObject is the THREE.Group)
+                        hitObject.health -= 50;
+                        if (hitObject.health <= 0) {
+                            scene.remove(hitObject);
+                            enemies = enemies.filter(e => e !== hitObject);
+                            score++;
+                            updateUI();
+                             // Optional: Spawn a new enemy
+                            // spawnEnemies(1);
+                        }
+                    } else if (hitObject.name === 'Buildable') {
+                        // Projectiles can destroy player builds
+                        scene.remove(hitObject);
+                        buildables = buildables.filter(b => b !== hitObject);
+                    }
+                    return; 
+                }
+
+                // Remove projectile if out of bounds
+                if (Math.abs(p.position.x) > mapSize * 2 || Math.abs(p.position.z) > mapSize * 2 || p.position.y < -10) {
+                    scene.remove(p);
+                    projectiles.splice(pIndex, 1);
+                }
+            });
+        }
+
+        function updateEnemies(delta) {
+            const enemySpeed = 20;
+            const now = clock.elapsedTime;
+            
+            enemies.forEach(enemy => {
+                // 1. Apply Gravity
+                enemy.velocity.y -= 9.8 * 10.0 * delta; 
+                enemy.position.y += enemy.velocity.y * delta;
+
+                // 2. Simple Ground Check / Collision
+                const floorLevel = ENEMY_HEIGHT / 2; // Center of 4 unit tall character is 2
+                if (enemy.position.y < floorLevel) {
+                    enemy.velocity.y = 0;
+                    enemy.position.y = floorLevel;
+                    enemy.canJump = true;
+                }
+
+                // 3. Movement towards player (Horizontal)
+                const targetPos = controls.getObject().position.clone();
+                targetPos.y = enemy.position.y; 
+                
+                const direction = targetPos.sub(enemy.position).normalize();
+                
+                // Rotate enemy to face direction of movement
+                const angle = Math.atan2(direction.x, direction.z);
+                enemy.rotation.y = angle;
+
+                // Move forward if on the ground
+                if (enemy.canJump) {
+                    enemy.position.x += direction.x * enemySpeed * delta;
+                    enemy.position.z += direction.z * enemySpeed * delta;
+                }
+                
+                // 4. Simple Jumping AI
+                if (enemy.canJump && (now - enemy.lastJumpTime > 3 || Math.random() < 0.005)) { 
+                    enemy.velocity.y += ENEMY_JUMP_VELOCITY; 
+                    enemy.canJump = false;
+                    enemy.lastJumpTime = now;
+                }
+            });
+        }
+        
+        function updateUI() {
+            document.getElementById('score-display').textContent = `🎯 Kills: ${score}`;
+            document.getElementById('resource-display').textContent = `🌳 Wood: ${player.resources}`;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (player.isLocked) {
+                const delta = clock.getDelta();
+                updatePhysics(delta);
+                updateProjectiles(delta);
+                updateEnemies(delta);
+                updateHealthBarRotation(); // Keep health bars facing the camera
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            init3D();
+            animate();
+        };
+    </script>
+</body>
+</html>
