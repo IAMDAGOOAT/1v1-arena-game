@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Build Royale Arena V9 (Ramp Fix & Controls Check)</title>
+    <title>Build Royale Arena V9 (Final Debug Check)</title>
     <!-- Tailwind CSS (Addressing console warning: using development CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -39,6 +39,13 @@
             overflow: hidden;
             position: relative;
             cursor: pointer;
+        }
+        
+        /* NEW: Ensure threejs-output takes up the full container size */
+        #threejs-output {
+            width: 100%;
+            height: 100%;
+            position: relative; /* Important for absolute positioning of the canvas */
         }
 
         #game-container canvas {
@@ -270,7 +277,17 @@
 
         function init3D() {
             const container = document.getElementById('threejs-output');
+            const startButton = document.getElementById('startButton');
+            const statusDisplay = document.getElementById('status-display');
             
+            // CRITICAL CHECK 1: Ensure PointerLockControls script is loaded
+            if (typeof THREE.PointerLockControls === 'undefined') {
+                console.error("FATAL ERROR: PointerLockControls script is missing. Cannot start 3D environment.");
+                statusDisplay.textContent = '❌ ERROR: 3D Controls Failed to Load.';
+                startButton.disabled = true;
+                return; 
+            }
+
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x7c94a8);
             scene.fog = new THREE.Fog(0x7c94a8, 0, mapSize * 2);
@@ -280,8 +297,20 @@
             camera.position.set(0, PLAYER_HEIGHT, 0); 
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
+            
+            // NEW: Set a clear color immediately to ensure the background isn't black
+            renderer.setClearColor(0x7c94a8); 
+            
             renderer.setSize(container.clientWidth, container.clientHeight);
             container.appendChild(renderer.domElement);
+
+            // CRITICAL CHECK 2: Ensure renderer canvas was attached
+            if (!renderer.domElement || renderer.domElement.parentNode !== container) {
+                console.error("FATAL ERROR: Renderer canvas failed to attach to the DOM.");
+                statusDisplay.textContent = '❌ ERROR: 3D Rendering Failed to Initialize.';
+                startButton.disabled = true;
+                return;
+            }
 
             // Lighting
             scene.add(new THREE.AmbientLight(0x404040, 5));
@@ -313,6 +342,8 @@
             
             // Start the animation loop after initialization
             animate(); 
+            
+            console.log('--- Init3D Complete. Game setup finished. ---');
         }
 
         function onWindowResize() {
@@ -587,6 +618,8 @@
 
 
         // --- Game Loop & Physics ---
+        let frameCount = 0;
+        let lastLogTime = 0;
 
         function updatePhysics(delta) {
             // Player Movement
@@ -742,6 +775,15 @@
 
             if (player.isLocked) {
                 const delta = clock.getDelta();
+                
+                // NEW: Diagnostic logging to confirm loop is running
+                frameCount++;
+                const now = clock.elapsedTime;
+                if (now - lastLogTime > 5) { // Log every 5 seconds
+                    console.log(`[Game Loop Status] Running. Frame count: ${frameCount}. Player Y position: ${controls.getObject().position.y.toFixed(2)}`);
+                    lastLogTime = now;
+                }
+                
                 // Ensure controls is defined before moving it
                 if (controls) {
                     updatePhysics(delta);
@@ -750,10 +792,15 @@
                     updateHealthBarRotation(); 
                 }
             }
-            renderer.render(scene, camera);
+            // Ensure rendering happens regardless of lock state (to show the initial scene)
+            if (renderer) {
+                renderer.render(scene, camera);
+            }
         }
 
         window.onload = function () {
+            // Diagnostic 1
+            console.log('--- Window Loaded. Starting init3D. ---'); 
             init3D(); 
         };
     </script>
